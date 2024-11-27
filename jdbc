@@ -1,0 +1,199 @@
+import java.sql.*;
+import java.util.*;
+
+class IceCream {
+    private List<Integer> flavorIds;
+    private List<Integer> toppingIds;
+    private int numScoops;
+    private int numCups;
+    private int numCones;
+    private int numWaffles;
+    static Connection conn;
+
+    public IceCream(Connection connection) {
+        this.flavorIds = new ArrayList<>();
+        this.toppingIds = new ArrayList<>();
+        this.numScoops = 0;
+        this.numCups = 0;
+        this.numCones = 0;
+        this.numWaffles = 0;
+        static Connection conn;
+    }
+
+    public void addFlavor(int flavorId) {
+        flavorIds.add(flavorId);
+    }
+
+    public void addTopping(int toppingId) {
+        toppingIds.add(toppingId);
+    }
+
+    public void setNumScoops(int num) {
+        this.numScoops = num;
+    }
+
+    public void setNumCups(int num) {
+        this.numCups = num;
+    }
+
+    public void setNumCones(int num) {
+        this.numCones = num;
+    }
+
+    public void setNumWaffles(int num) {
+        this.numWaffles = num;
+    }
+
+    public double calculateTotal() throws SQLException {
+        double total = 0;
+        
+        // Calculate cost of flavors
+        String flavorQuery = "SELECT price FROM Flavors WHERE id = ?";
+        try  {
+	Class.forName("com.mysql.cj.jdbc.Driver");
+	conn=DriverManager.getConnection("jdbc:mysql://localhost:3307/databasename","root","");
+            for (int flavorId : flavorIds) {
+                stmt.setInt(1, flavorId);
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    total += rs.getDouble("price");
+                }
+            }
+        }
+
+        // Additional charges for scoops, cups, cones, and waffles
+        total += (numScoops * 20);
+        total += (numCups * 30);
+        total += (numCones * 40);
+        total += (numWaffles * 50);
+
+        // Calculate cost of toppings
+        String toppingQuery = "SELECT price FROM Toppings WHERE id = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(toppingQuery)) {
+            for (int toppingId : toppingIds) {
+                stmt.setInt(1, toppingId);
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    total += rs.getDouble("price");
+                }
+            }
+        }
+
+        return total;
+    }
+
+    public void saveOrder(int customerId) throws SQLException {
+        // Save the order to the Orders table
+        String insertOrderQuery = "INSERT INTO Orders (customer_id, total_cost) VALUES (?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(insertOrderQuery, Statement.RETURN_GENERATED_KEYS)) {
+            double total = calculateTotal();
+            stmt.setInt(1, customerId);
+            stmt.setDouble(2, total);
+            stmt.executeUpdate();
+
+            // Retrieve the generated order ID
+            ResultSet rs = stmt.getGeneratedKeys();
+            if (rs.next()) {
+                int orderId = rs.getInt(1);
+                // Save selected flavors to OrderFlavors table
+                String insertFlavorQuery = "INSERT INTO OrderFlavors (order_id, flavor_id) VALUES (?, ?)";
+                try (PreparedStatement flavorStmt = connection.prepareStatement(insertFlavorQuery)) {
+                    for (int flavorId : flavorIds) {
+                        flavorStmt.setInt(1, orderId);
+                        flavorStmt.setInt(2, flavorId);
+                        flavorStmt.addBatch();
+                    }
+                    flavorStmt.executeBatch();
+                }
+
+                // Save selected toppings to OrderToppings table
+                String insertToppingQuery = "INSERT INTO OrderToppings (order_id, topping_id) VALUES (?, ?)";
+                try (PreparedStatement toppingStmt = connection.prepareStatement(insertToppingQuery)) {
+                    for (int toppingId : toppingIds) {
+                        toppingStmt.setInt(1, orderId);
+                        toppingStmt.setInt(2, toppingId);
+                        toppingStmt.addBatch();
+                    }
+                    toppingStmt.executeBatch();
+                }
+
+                System.out.println("Order saved successfully!");
+            }
+        }
+    }
+}
+
+class IceCreamClient {
+    private static int customerCount = 0;
+    private static final int MAX_CUSTOMERS = 100;
+    private static final String JDBC_URL = "jdbc:mysql://localhost:3306/IceCreamParlour";
+    private static final String JDBC_USER = "root";
+    private static final String JDBC_PASSWORD = "password";
+
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        Connection connection = null;
+        
+        try {
+            connection = DriverManager.getConnection(JDBC_URL, JDBC_USER, JDBC_PASSWORD);
+        } catch (SQLException e) {
+            System.out.println("Database connection failed!");
+            e.printStackTrace();
+            return;
+        }
+
+        String[] flavors = {"Vanilla", "Chocolate", "Strawberry", "Butterscotch", "Mint", "Mango", "Coffee", "Black Currant", "Bubble Gum", "Cookies & Cream"};
+        String[] toppings = {"Nuts", "Sprinkles", "Chocolate Chips", "Caramel", "Whipped Cream", "Cherry Crush", "Oreo Crumbles", "Jelly", "Fruits", "Coconut Flakes"};
+
+        while (customerCount < MAX_CUSTOMERS) {
+            System.out.println("\nCustomer " + (customerCount + 1) + " - Welcome to the Ice Cream Parlour!");
+            IceCream iceCream = new IceCream(connection);
+
+            System.out.println("Choose flavors (0 to stop):");
+            for (int i = 0; i < flavors.length; i++) {
+                System.out.printf("%d. %s\n", i + 1, flavors[i]);
+            }
+            while (true) {
+                int flavorChoice = scanner.nextInt();
+                if (flavorChoice == 0) break;
+                if (flavorChoice > 0 && flavorChoice <= flavors.length) {
+                    iceCream.addFlavor(flavorChoice);
+                } else {
+                    System.out.println("Invalid choice. Please select again.");
+                }
+            }
+
+            // Ask for scoops, cups, cones, and waffles
+            System.out.println("How many scoops?");
+            iceCream.setNumScoops(scanner.nextInt());
+            System.out.println("How many cups?");
+            iceCream.setNumCups(scanner.nextInt());
+            System.out.println("How many cones?");
+            iceCream.setNumCones(scanner.nextInt());
+            System.out.println("How many waffles?");
+            iceCream.setNumWaffles(scanner.nextInt());
+
+            // Choose toppings
+            System.out.println("Choose toppings (0 to stop):");
+            for (int i = 0; i < toppings.length; i++) {
+                System.out.printf("%d. %s\n", i + 1, toppings[i]);
+            }
+            while (true) {
+                int toppingChoice = scanner.nextInt();
+                if (toppingChoice == 0) break;
+                if (toppingChoice > 0 && toppingChoice <= toppings.length) {
+                    iceCream.addTopping(toppingChoice);
+                } else {
+                    System.out.println("Invalid choice. Please select again.");
+                }
+            }
+
+            // Save the order
+            iceCream.saveOrder(customerCount + 1);
+            customerCount++;
+        }
+
+        System.out.println("Maximum customer limit reached. Thank you for visiting!");
+        scanner.close();
+    }
+}
